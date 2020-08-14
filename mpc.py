@@ -193,18 +193,29 @@ class MPC:
         self.sol_u_prev = None
         self.sol_f_prev = None
 
-    def get_trajectory(self, x_init, t_des, q_des):
+    def get_trajectory(self, x_init, q_des, t_des=None):
         """
-        Given the current state and a cubic spline representation of the desired
-        pose trajectory, solve the trajectory optimization problem and return the
-        resulting trajectory, and the amount of time taken to obtain it
-        Also updates the previous solution trajectory in memory if successful
+        Given current state and desired pose or pose trajectory, solve the trajectory
+        optimization problem and return the resulting trajectory, and the amount of
+        time taken to obtain it
+        Additionally records the results in an internal variable so it could be used to
+        warm start the solution to the next call to this function
+        If trajectory tracking is desired, then t_des and q_des should be python lists
+        corresponding to the desired pose trajectory. Otherwise if a fixed pose is desired,
+        then t_des should be None and q_des should be a single value
         """
         tic = time.time() #keep track of how long this function takes to evaluate
 
-        spline = CubicSpline(t_des, q_des, axis=1)
-        t_colloc = [i*self.tf/(2.0*self.N) for i in range(2*self.N+1)]
-        x_des = spline(t_colloc).tolist() + spline(t_colloc,1).tolist()
+        if t_des is None:
+            x_des = [\
+                [q_des[0] for i in range(2*self.N+1)],
+                [q_des[1] for i in range(2*self.N+1)],
+                [0 for i in range(2*self.N+1)],
+                [0 for i in range(2*self.N+1)]]
+        else:
+            spline = CubicSpline(t_des, q_des, axis=1)
+            t_colloc = [i*self.tf/(2.0*self.N) for i in range(2*self.N+1)]
+            x_des = spline(t_colloc).tolist() + spline(t_colloc,1).tolist()
 
         # prepare numerical data to feed to the optimization model
         if all(sol_prev is not None for sol_prev in
