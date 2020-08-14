@@ -2,6 +2,7 @@ from pyomo.environ import *
 from pyomo.opt import SolverStatus, TerminationCondition
 #careful not to import anything else from math-that would override pyomo intrinsic functions
 from math import pi
+from scipy.interpolate import CubicSpline
 import time
 
 class MPC:
@@ -38,7 +39,6 @@ class MPC:
         self.d_max = 2.0 #extent of rail that cart travels on
 
         self.set_parameters()
-        self.reset_sol_prev()
 
         # pyomo optimization model
         self.m = AbstractModel()
@@ -51,7 +51,7 @@ class MPC:
         self.m.state = RangeSet(0, self.n-1) #index for state variables
         
         self.m.x_init = Param(self.m.state, within=Reals) #initial state
-        self.m.x_des = Param(self.m.state, within=Reals) #desired state
+        self.m.x_des = Param(self.m.t, self.m.state, within=Reals) #desired state
 
         self.m.Q = Param(self.m.state, within=Reals) #state tracking cost weights
         self.m.Qf = Param(self.m.state, within=Reals) #final state cost weights
@@ -61,7 +61,7 @@ class MPC:
         # runtime, otherwise it defaults to linear state interpolation and zero control
         # and dynamics
         def _linear_guess(m,i,j):
-            return i/(2.0*m.N)*(m.x_des[j] - m.x_init[j])
+            return i/(2.0*m.N)*(m.x_des[2*m.N, j] - m.x_init[j])
         self.m.x_guess = Param(self.m.t, self.m.state, within=Reals, initialize=_linear_guess) #state
         self.m.u_guess = Param(self.m.t, within=Reals, initialize=0) #control
         self.m.f_guess = Param(self.m.t, self.m.state, within=Reals, initialize=0) #dynamics
@@ -98,16 +98,16 @@ class MPC:
             '''
             for j in m.state:
                 if j == 1:
-                    J += m.Q[j] * quicksum(simp[i]*(cos(m.x_des[j]) - cos(m.x[i,j]))**2 \
+                    J += m.Q[j] * quicksum(simp[i]*(cos(m.x_des[i, j]) - cos(m.x[i,j]))**2 \
                         for i in m.t)
-                    J += m.Qf[j] * (cos(m.x_des[j]) - cos(m.x[2*m.N,j]))**2
-                    J += m.Q[j] * quicksum(simp[i]*(sin(m.x_des[j]) - sin(m.x[i,j]))**2 \
+                    J += m.Q[j] * quicksum(simp[i]*(sin(m.x_des[i, j]) - sin(m.x[i,j]))**2 \
                         for i in m.t)
-                    J += m.Qf[j] * (sin(m.x_des[j]) - sin(m.x[2*m.N,j]))**2
+                    J += m.Qf[j] * (cos(m.x_des[2*m.N,j]) - cos(m.x[2*m.N,j]))**2
+                    J += m.Qf[j] * (sin(m.x_des[2*m.N,j]) - sin(m.x[2*m.N,j]))**2
                 else:
-                    J += m.Q[j] * quicksum(simp[i]*(m.x_des[j] - m.x[i,j])**2 \
+                    J += m.Q[j] * quicksum(simp[i]*(m.x_des[i, j] - m.x[i,j])**2 \
                         for i in m.t)
-                    J += m.Qf[j] * (m.x_des[j] - m.x[2*m.N,j])**2
+                    J += m.Qf[j] * (m.x_des[2*m.N,j] - m.x[2*m.N,j])**2
 
             return J
         self.m.obj= Objective(rule=_obj, sense=minimize)
@@ -182,6 +182,10 @@ class MPC:
         self.R = R #input regulation cost weight
         self.verbose = verbose #toggles how much optimizer progress to print
 
+        #if collocation parameters are changed, then the previous solution cannot be used to
+        #warmstart the optimization problem under the new collocation
+        self.reset_sol_prev()
+
     def reset_sol_prev(self):
         # reset the previous solution to the optimization, which is used for warm starting
         self.sol_t_prev = None
@@ -189,26 +193,32 @@ class MPC:
         self.sol_u_prev = None
         self.sol_f_prev = None
 
-    def get_trajectory(self, x_init, x_des):
+    def get_trajectory(self, x_init, t_des, q_des):
         """
-        Given a current and desired state, solve the trajectory optimization problem and
-        return the resulting trajectory, and the amount of time taken to obtain it
+        Given the current state and a cubic spline representation of the desired
+        pose trajectory, solve the trajectory optimization problem and return the
+        resulting trajectory, and the amount of time taken to obtain it
         Also updates the previous solution trajectory in memory if successful
         """
         tic = time.time() #keep track of how long this function takes to evaluate
 
+        spline = CubicSpline(t_des, q_des, axis=1)
+        t_colloc = [i*self.tf/(2.0*self.N) for i in range(2*self.N+1)]
+        x_des = spline(t_colloc).tolist() + spline(t_colloc,1).tolist()
+
         # prepare numerical data to feed to the optimization model
-        if all(sol_prev is not None for sol_prev in 
+        if all(sol_prev is not None for sol_prev in
             [self.sol_x_prev, self.sol_u_prev, self.sol_f_prev]):
             # warmstart optimization with solution from previous solution
             data = {None: {
                 'x_init' : {j : x_init[j] for j in range(self.n)},
-                'x_des' : {j : x_des[j] for j in range(self.n)},
+                'x_des' : {(i,j) : x_des[j][i] \
+                    for i in range(2*self.N+1) for j in range(self.n)},
                 'x_guess' : {(i,j) : self.sol_x_prev[j][i] \
-                    for i in range(len(self.sol_u_prev)) for j in range(self.n)},
-                'u_guess' : {i : self.sol_u_prev[i] for i in range(len(self.sol_u_prev))},
+                    for i in range(2*self.N+1) for j in range(self.n)},
+                'u_guess' : {i : self.sol_u_prev[i] for i in range(2*self.N+1)},
                 'f_guess' : {(i,j) : self.sol_f_prev[j][i] \
-                    for i in range(len(self.sol_u_prev)) for j in range(self.n)},
+                    for i in range(2*self.N+1) for j in range(self.n)},
                 'tf' : {None: self.tf},
                 'N' : {None: self.N},
                 'Q' : {j : self.Q[j] for j in range(self.n)},
@@ -220,7 +230,8 @@ class MPC:
             # the initialize argument within self.x_guess, self.u_guess, and self.f_guess
             data = {None: {
                 'x_init' : {j : x_init[j] for j in range(self.n)},
-                'x_des' : {j : x_des[j] for j in range(self.n)},
+                'x_des' : {(i,j) : x_des[j][i] \
+                    for i in range(2*self.N+1) for j in range(self.n)},
                 'tf' : {None: self.tf},
                 'N' : {None: self.N},
                 'Q' : {j : self.Q[j] for j in range(self.n)},
