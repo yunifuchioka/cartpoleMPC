@@ -37,7 +37,7 @@ anim_file_name = 'cartpoleMPC' #filename for mp4 video
 
 # toggles whether to make the MPC solve an optimization problem performing target
 # trajectory tracking or fixed target stabilization
-trajectory_tracking = False
+trajectory_tracking = True
 spline_points = 100 #granularity of cubic spline if trajectory_tracking=True
 
 x_init = np.array([0.0, 0.0, 0.0, 0.0]) #initial state
@@ -56,8 +56,8 @@ q_des_mat = np.array([ \
 def q_des_func(t):
     t_idx = np.histogram(t, bins=q_des_mat[0])[0].argmax()
     return np.array([ \
-        q_des_mat[1, t_idx],
-        #np.sin(t*q_des_mat[1, t_idx]),
+        #q_des_mat[1, t_idx],
+        np.sin(t*q_des_mat[1, t_idx]),
         q_des_mat[2, t_idx]])
 
 if trajectory_tracking:
@@ -69,10 +69,13 @@ if trajectory_tracking:
     # plot desired spline trajectory
     t_fine = np.linspace(0, T, 1000)
     y_fine = q_des_spline(t_fine)
-    plt.plot(t_des, q_des.T, 'o')
-    plt.plot(t_fine, y_fine.T)
-    plt.legend(['Position Points', 'Angle Points', 'Position Spline', 'Angle Spline'])
-    plt.title('Desired Pose Trajectory')
+    fig, ax = plt.subplots(nrows=2, ncols=1)
+    ax[0].plot(t_des, q_des[0].T, 'o')
+    ax[0].plot(t_fine, y_fine[0].T)
+    ax[0].set_title('Desired Position')
+    ax[1].plot(t_des, q_des[1].T, 'o')
+    ax[1].plot(t_fine, y_fine[1].T)
+    ax[1].set_title('Desired Angle')
     plt.show()
 
 # initialize MPC

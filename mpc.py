@@ -74,7 +74,7 @@ class MPC:
         # otherwise it defaults to a linear interpolation of state and zero control and 
         # dynamics
         def _linear_guess(m,i,j):
-            return i/(2.0*self.N)*(m.x_des[2*self.N, j] - m.x_init[j])
+            return i/(2.0*self.N)*(m.x_des[2*self.N, j] - m.x_init[j]) + m.x_init[j]
         self.m.x_guess = Param(self.m.t, self.m.state, within=Reals, 
             initialize=_linear_guess)
         self.m.u_guess = Param(self.m.t, within=Reals, initialize=0)
