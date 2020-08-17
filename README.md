@@ -1,0 +1,3 @@
+# cartpoleMPC
+
+Model Predictive Controller (MPC) for a simple cartpole system that tracks either a fixed target pose, or a target pose trajectory specified using splines. The direct Hermite-Simpson collocation used here is based on [Matthew Kelly's tutorial on Trajectory Optimization](https://epubs.siam.org/doi/pdf/10.1137/16M1062569). The nonlinear program is solved using [IPOPT](https://coin-or.github.io/Ipopt/) accessed within a python environment through [Pyomo](https://pyomo.readthedocs.io/en/stable/#).
