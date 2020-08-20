@@ -8,8 +8,13 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from mpc import MPC
 plt.style.use('seaborn')
+
+casadi = True
+if casadi:
+    from mpc_casadi import MPC
+else:
+    from mpc_pyomo import MPC
 
 T = 60.0 # simulation time interval
 

@@ -13,6 +13,8 @@ class MPC:
     optimization for constant target pose stabilization or target trajectory tracking, and
     computation of inputs according to the resulting trajectory
 
+    Implementation using the pyomo library as the optimization framework
+
     Note: all inputs and outputs of this class are native python objects and not numpy
     arrays. This includes trajectories, which are represented with spline interpolation
     points
@@ -29,7 +31,7 @@ class MPC:
         "An Introduction to Trajectory Optimization: How to Do Your Own Direct Collocation"
 
         Note: In hermite simpson collocation in separated form, a finite element consists 
-        of three colllocation points: left endpoint, midpoint, and right endpoint.
+        of three collocation points: left endpoint, midpoint, and right endpoint.
         Each finite element is indexed using the odd indices of the collocation points,
         as these correspond to the midpoints of the finite elements
         """
