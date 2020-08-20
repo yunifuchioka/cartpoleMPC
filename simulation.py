@@ -10,11 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 plt.style.use('seaborn')
 
-casadi = True
-if casadi:
-    from mpc_casadi import MPC
-else:
-    from mpc_pyomo import MPC
+from mpc import MPC
 
 T = 60.0 # simulation time interval
 
@@ -31,8 +27,8 @@ u_max = 10.0 #maximum actuator force
 d_max = 2.0 #extent of rail that cart travels on
 tf=2.0 #optimization horizon
 N=5 #number of finite elements (number of collocation points = 2*N+1)
-Q=[100,150,5,5] #state error cost weight
-Qf=[10,50,5,5] #final state error cost weight
+Q=np.array([100,150,5,5]) #state error cost weight
+Qf=np.array([10,50,5,5]) #final state error cost weight
 R=5 #input regulation cost weight
 verbose=0 #optimizer output verbosity
 
@@ -206,11 +202,11 @@ for i in range(max(tc.shape)-1):
         t_des_t = np.insert(t_des[t_idx+1:]-t_sim[-1], 0, 0.0)
         q_des_t = np.hstack((q_des_spline(t_sim[-1])[:,None], q_des[:, t_idx+1:]))
         
-        sol_t, sol_x, sol_u, toc = controller.get_trajectory(x_init=x_sim[:,-1].tolist(), 
-            q_des=q_des_t.tolist(), t_des=t_des_t.tolist())
+        sol_t, sol_x, sol_u, toc = controller.get_trajectory(x_init=x_sim[:,-1], 
+            q_des=q_des_t, t_des=t_des_t)
     else:
-        sol_t, sol_x, sol_u, toc = controller.get_trajectory(x_init=x_sim[:,-1].tolist(), 
-            q_des=q_des_func(t_sim[-1]).tolist(), t_des=None)
+        sol_t, sol_x, sol_u, toc = controller.get_trajectory(x_init=x_sim[:,-1], 
+            q_des=q_des_func(t_sim[-1]), t_des=None)
     
     print('Progress: {}/{}. MPC Computation time: {}'.format(i,max(tc.shape)-1, toc))
 

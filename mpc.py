@@ -9,12 +9,14 @@ class MPC:
     optimization for constant target pose stabilization or target trajectory tracking, and
     computation of inputs according to the resulting trajectory
 
-    Implementation using the casadi library as the optimization framework
+    Inputs or outputs that are trajectories are specified using spline interpolation
+    points
     """
 
     def __init__(self, 
             m1=1.0, m2=0.1, l=0.5, g=9.81, u_max=10.0, d_max=2.0,
-            tf=2.0, N=5, Q=[100,150,5,5], Qf=[10,50,5,5], R=5, verbose=0):
+            tf=2.0, N=5, Q=np.array([100,150,5,5]), Qf=np.array([10,50,5,5]), R=5,
+            verbose=0):
         """
         Initializes a casadi optimization model that solves a trajectory optimization
         problem using direct hermite-simpson collocation in separated form, where the
@@ -113,10 +115,6 @@ class MPC:
         u = ca.SX.sym('u', self.nu) #control
         m1, m2, l, g = self.m1, self.m2, self.l, self.g
         # equations of motion taken from Russ Tedrake underactuated robotics ch.3
-        # this method of deriving equations of motion from matrix operations is more
-        # scalable to larger robotic systems than the scalar equations written in 
-        # mpc_pyomo.py, and only made possible through the powerful symbolic framework of 
-        # casadi 
         M = ca.SX(np.array([ \
             [m1 + m2, m2*l*ca.cos(x[1])],
             [m2*l*ca.cos(x[1]), m2*l**2]
@@ -148,10 +146,12 @@ class MPC:
 
                 # interpolation constraints
                 self.opti.subject_to( \
+                    # equation (6.11) in Kelly 2017
                     x_mid == (x_left+x_right)/2.0 + self.tf/self.N*(f_left-f_right)/8.0)
 
                 # collocation constraints
                 self.opti.subject_to( \
+                    # equation (6.12) in Kelly 2017
                     self.tf/self.N*(f_left+4*f_mid+f_right)/6.0 == x_right-x_left)
     
     def reset_sol_prev(self):
@@ -178,12 +178,6 @@ class MPC:
             Returns None if the optimization failed to converge
         toc - the amount of time it took to evaluate this function
         """
-        
-        # convert list to np array. Necessary for backwards compatibility with mpc_pyomo.py
-        x_init = np.array(x_init)
-        q_des = np.array(q_des)
-        if t_des is not None:
-            t_des = np.array(t_des)
 
         # keep track of how long this function takes to evaluate
         tic = time.time()
@@ -207,13 +201,9 @@ class MPC:
         self.opti.set_value(self.x_init, x_init)
         self.opti.set_value(self.x_des, x_des)
 
-        # decision variable initial guess
-        self.opti.set_initial(self.X, np.linspace(x_init, x_des[:,-1], 2*self.N+1).T)
-        self.opti.set_initial(self.U, np.zeros(self.U.shape)) #zero control
-
-        # warmstart optimization with the trajectory stored in the optimization solution
-        # memory, which should be populated if the previous optimization was successful
         if self.sol_x_prev is not None and self.sol_u_prev is not None:
+            # warmstart optimization with the trajectory stored in the optimization solution
+            # memory, which should be populated if the previous optimization was successful
             self.opti.set_initial(self.X, self.sol_x_prev)
             self.opti.set_initial(self.U, self.sol_u_prev)
         else:
@@ -260,7 +250,7 @@ class MPC:
             control spline trajectory at the time t. Returns None if there is are no
             values stored in the optimization solution memory
         """
-        if any(sol_prev is None for sol_prev in [self.sol_t_prev, self.sol_u_prev]):
+        if self.sol_t_prev is None or self.sol_u_prev is None:
             # optimization solution memory is empty, so return None
             # this will happen if this function is erroneously called immediately after
             # self.reset_sol_prev(), or if the previous call to self.get_trajectory() was 
@@ -274,9 +264,8 @@ class MPC:
                 return self.sol_u_prev[-1]
             else:
                 # get the index of the finite element that t belongs to
-                fe_bins = [self.sol_t_prev[i] \
-                    for i in range(len(self.sol_t_prev)) if i%2==0]
-                fe_idx = [i for i in range(len(fe_bins)) if fe_bins[i]<=t][-1]
+                fe_bins = self.sol_t_prev[::2]
+                fe_idx = np.where(fe_bins<=t)[0][-1] #valid as long as t<sol_t_prev[-1]
 
                 #equation (4.10) in Kelly 2017
                 hk = fe_bins[1] - fe_bins[0] #finite element length
