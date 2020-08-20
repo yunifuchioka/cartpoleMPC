@@ -25,8 +25,9 @@ l = 0.5 #pendulum length
 g = 9.81 #gravity
 u_max = 10.0 #maximum actuator force
 d_max = 2.0 #extent of rail that cart travels on
+
 tf=2.0 #optimization horizon
-N=5 #number of finite elements (number of collocation points = 2*N+1)
+N=10 #number of finite elements (number of collocation points = 2*N+1)
 Q=np.array([100,150,5,5]) #state error cost weight
 Qf=np.array([10,50,5,5]) #final state error cost weight
 R=5 #input regulation cost weight
